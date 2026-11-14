@@ -1,0 +1,39 @@
+# 给 GitHub 机器人的工作说明书：push 到 main 后，自动把网页传到东京服务器
+# （GitHub Pages 那边由 GitHub 自己更新，不归这里管）
+
+name: 部署到东京服务器
+
+# 什么时候干活
+on:
+  push:
+    branches: [main]   # 往 main 分支 push 时
+  workflow_dispatch:   # 也可以在 GitHub 网页上手动点按钮
+
+# 同一时间只跑一个部署，连续 push 时后来的排队等着
+concurrency:
+  group: deploy-tokyo
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest   # 借 GitHub 一台全新的 Ubuntu 电脑，干完就销毁
+    steps:
+      - name: 取出代码
+        uses: actions/checkout@v4   # 别人写好的现成步骤：把仓库代码下载到这台电脑
+
+      - name: 装上钥匙和服务器身份证
+        env:   # 从保险柜取出来，放进临时变量
+          SSH_KEY: ${{ secrets.DEPLOY_SSH_KEY }}
+          KNOWN_HOSTS: ${{ secrets.DEPLOY_KNOWN_HOSTS }}
+        run: |
+          mkdir -p ~/.ssh
+          printf '%s\n' "$SSH_KEY" > ~/.ssh/deploy_key
+          chmod 600 ~/.ssh/deploy_key
+          printf '%s\n' "$KNOWN_HOSTS" > ~/.ssh/known_hosts
+
+      - name: 传到东京服务器
+        # 和 deploy.sh 里的 rsync 一样：排除点开头的隐藏文件（.git、.github 等）和 deploy.sh
+        run: >-
+          rsync -av --exclude '.*' --exclude deploy.sh
+          -e "ssh -i ~/.ssh/deploy_key -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes"
+          ./ ubuntu@43.133.7.130:/var/www/html/
